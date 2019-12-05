@@ -76,7 +76,11 @@ runApp = do
 prepareAppReqs
   :: IO ( Either StartUpError DB.FirstAppDB )
 prepareAppReqs =
-  error "copy your prepareAppReqs from the previous level."
+  either (Left . DBInitErr) Right <$> DB.initDB (Conf.dbFilePath Conf.firstAppConfig) 
+    
+    -- case resp of 
+    --   Left sqlError -> Left $ DBInitErr sqlError
+    --   Right conn -> Right conn
 
 -- | Some helper functions to make our lives a little more DRY.
 mkResponse
@@ -130,8 +134,9 @@ resp200Json e =
 app
   :: DB.FirstAppDB
   -> Application
-app db rq cb =
-  error "app not reimplemented"
+app db rq cb = cb =<< either mkErrorResponse id <$> appMResponse
+  where appMResponse = runAppM $ mkRequest rq >>= handleRequest db
+
 
 handleRequest
   :: DB.FirstAppDB
@@ -184,7 +189,7 @@ mkErrorResponse
 mkErrorResponse UnknownRoute =
   resp404 PlainText "Unknown Route"
 mkErrorResponse EmptyCommentText =
-  resp400 PlainText "Empty Comment"
+  resp400 PlainText "Empty Comment Text"
 mkErrorResponse EmptyTopic =
   resp400 PlainText "Empty Topic"
 mkErrorResponse ( DBError _ ) =

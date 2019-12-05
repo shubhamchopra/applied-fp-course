@@ -2,6 +2,7 @@ module Level04.Types.CommentText
   ( CommentText
   , mkCommentText
   , getCommentText
+  , encodeCommentText
   ) where
 
 import           Waargonaut.Encode          (Encoder)
@@ -54,4 +55,4 @@ getCommentText (CommentText t) =
 --
 encodeCommentText :: Applicative f => Encoder f CommentText
 encodeCommentText = -- Try using 'contramap' and 'E.text'.
-  error "CommentText JSON encoder not implemented"
+  contramap getCommentText E.text

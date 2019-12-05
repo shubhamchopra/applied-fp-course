@@ -16,9 +16,7 @@ import           Data.Either              (either)
 import           Data.Text                (Text)
 import           Data.Text.Encoding       (decodeUtf8)
 
-import           Level02.Types            (ContentType, Error, RqType,
-                                           mkCommentText, mkTopic,
-                                           renderContentType)
+import           Level02.Types            
 
 -- |-------------------------------------------|
 -- |- Don't start here, go to Level02.Types!  -|
@@ -30,29 +28,29 @@ mkResponse
   -> ContentType
   -> LBS.ByteString
   -> Response
-mkResponse =
-  error "mkResponse not implemented"
+mkResponse status contentType =
+  responseLBS status [(hContentType, renderContentType contentType)]
 
 resp200
   :: ContentType
   -> LBS.ByteString
   -> Response
 resp200 =
-  error "resp200 not implemented"
+  mkResponse status200
 
 resp404
   :: ContentType
   -> LBS.ByteString
   -> Response
 resp404 =
-  error "resp404 not implemented"
+  mkResponse status404 
 
 resp400
   :: ContentType
   -> LBS.ByteString
   -> Response
 resp400 =
-  error "resp400 not implemented"
+  mkResponse status400 
 
 -- |----------------------------------------------------------------------------------
 -- These next few functions will take raw request information and construct         --
@@ -68,8 +66,11 @@ mkAddRequest
   :: Text
   -> LBS.ByteString
   -> Either Error RqType
-mkAddRequest =
-  error "mkAddRequest not implemented"
+mkAddRequest topic comment =
+  do 
+    t <- mkTopic topic
+    c <- mkCommentText $ lazyByteStringToStrictText comment
+    return $ AddRq t c
   where
     -- This is a helper function to assist us in going from a Lazy ByteString, to a Strict Text
     lazyByteStringToStrictText =
@@ -78,13 +79,14 @@ mkAddRequest =
 mkViewRequest
   :: Text
   -> Either Error RqType
-mkViewRequest =
-  error "mkViewRequest not implemented"
-
+mkViewRequest topic =
+  fmap ViewRq $ mkTopic topic
+  
 mkListRequest
   :: Either Error RqType
 mkListRequest =
-  error "mkListRequest not implemented"
+  Right ListRq
+
 
 -- |----------------------------------
 -- end of RqType creation functions --
@@ -93,8 +95,9 @@ mkListRequest =
 mkErrorResponse
   :: Error
   -> Response
-mkErrorResponse =
-  error "mkErrorResponse not implemented"
+mkErrorResponse EmptyTopic = resp400 PlainText "Empty Topic"
+mkErrorResponse EmptyComment = resp400 PlainText "Empty Comment Text"
+mkErrorResponse UnknownRequest = resp404 PlainText "Unknown request type"
 
 -- | Use our ``RqType`` helpers to write a function that will take the input
 -- ``Request`` from the Wai library and turn it into something our application
@@ -102,10 +105,22 @@ mkErrorResponse =
 mkRequest
   :: Request
   -> IO ( Either Error RqType )
-mkRequest =
+mkRequest request
   -- Remembering your pattern-matching skills will let you implement the entire
   -- specification in this function.
-  error "mkRequest not implemented"
+  | requestMethod request == "GET" 
+      = let path = pathInfo request
+        in case path of 
+          ["list"] -> return mkListRequest 
+          [t, "view"] -> return $ mkViewRequest t
+          _ -> return $ Left UnknownRequest 
+  | requestMethod request == "POST"
+      = let path = pathInfo request
+        in case path of
+          [t, "add"] -> mkAddRequest t <$> strictRequestBody request
+          _ -> return $ Left UnknownRequest
+  | otherwise = return $ Left UnknownRequest 
+                          
 
 -- | If we find that we need more information to handle a request, or we have a
 -- new type of request that we'd like to handle then we update the ``RqType``
@@ -121,14 +136,21 @@ mkRequest =
 handleRequest
   :: RqType
   -> Either Error Response
-handleRequest =
-  error "handleRequest not implemented"
+handleRequest (AddRq _ _) = Right $ resp200 PlainText "Add comment request not yet implemented"
+handleRequest (ViewRq _) = Right $ resp200 PlainText "View request not yet implemented"
+handleRequest ListRq  = Right $ resp200 PlainText "List request not yet implemented"
+-- handleRequest _ = Left UnknownRequest 
 
 -- | Reimplement this function using the new functions and ``RqType`` constructors as a guide.
 app
   :: Application
-app =
-  error "app not reimplemented"
-
+app req cb =
+  do 
+    rqTypeE <- mkRequest req
+    let response = rqTypeE >>= handleRequest
+    case response of 
+      Right resp -> cb resp
+      Left err -> cb $ mkErrorResponse err
+    
 runApp :: IO ()
 runApp = run 3000 app

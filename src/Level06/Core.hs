@@ -23,7 +23,9 @@ import           Network.HTTP.Types                 (Status, hContentType,
 
 import qualified Data.ByteString.Lazy               as LBS
 
-import           Data.Bifunctor                     (first)
+import           Data.Bifunctor                 ( first
+                                                , bimap
+                                                )
 import           Data.Either                        (either)
 import           Data.Monoid                        ((<>))
 
@@ -40,12 +42,13 @@ import           Level06.AppM                       (App, AppM (..),
                                                      liftEither, runApp)
 import qualified Level06.Conf                       as Conf
 import qualified Level06.DB                         as DB
-import           Level06.Types                      (Conf, ConfigError,
+import           Level06.Types                      (Conf(..), ConfigError,
                                                      ContentType (..),
-                                                     Error (..),
+                                                     Error (..), Port(..),
+                                                     DBFilePath(..),
                                                      RqType (AddRq, ListRq, ViewRq),
                                                      encodeComment, encodeTopic,
-                                                     mkCommentText, mkTopic,
+                                                     mkCommentText, mkTopic, confPortToWai,
                                                      renderContentType)
 
 -- | Our start-up is becoming more complicated and could fail in new and
@@ -57,7 +60,21 @@ data StartUpError
   deriving Show
 
 runApplication :: IO ()
-runApplication = error "copy your previous 'runApp' implementation and refactor as needed"
+runApplication = do
+  -- Load our configuration
+  cfgE <- runAppM prepareAppReqs
+  -- Loading the configuration can fail, so we have to take that into account now.
+  case cfgE of
+    Left err   ->
+      -- We can't run our app at all! Display the message and exit the application.
+      undefined
+    Right (cfg, dbConn) ->
+      -- We have a valid config! We can now complete the various pieces needed to run our
+      -- application. This function 'finally' will execute the first 'IO a', and then, even in the
+      -- case of that value throwing an exception, execute the second 'IO b'. We do this to ensure
+      -- that our DB connection will always be closed when the application finishes, or crashes.
+      run (confPortToWai cfg) (app cfg dbConn) >> 
+        Ex.finally (run undefined undefined) (DB.closeDB dbConn)
 
 -- | We need to complete the following steps to prepare our app requirements:
 --
@@ -72,7 +89,10 @@ runApplication = error "copy your previous 'runApp' implementation and refactor 
 -- up!
 --
 prepareAppReqs :: AppM StartUpError (Conf, DB.FirstAppDB)
-prepareAppReqs = error "copy your prepareAppReqs from the previous level."
+prepareAppReqs = do 
+  conf <- first ConfErr $ Conf.parseOptions "files/appconfig.json"
+  db <- first DBInitErr $ (liftIO $ DB.initDB (getDBFilePath $ dbFile conf)) >>= liftEither
+  return (conf, db)
 
 -- | Some helper functions to make our lives a little more DRY.
 mkResponse
